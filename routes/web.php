@@ -19,3 +19,5 @@ Route::get('/', function () {
 });
 
 Route::get('mail-verify/{token}', [UserController::class,'mailVerification']);
+Route::get('reset-password', [UserController::class,'resetPasswordLoad']);
+Route::post('reset-password', [UserController::class,'resetPassword']);

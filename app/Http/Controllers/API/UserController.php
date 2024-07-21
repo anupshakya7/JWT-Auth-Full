@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Models\PasswordReset;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -51,7 +52,7 @@ class UserController extends Controller
             return response()->json($validator->errors(), 400);
         }
 
-        if(!$token = auth()->attempt($validator->validated())) {
+        if(!$token = auth()->guard('api')->attempt($validator->validated())) {
             return response()->json([
                 'success' => false,
                 'msg' => 'Username & Password is Incorrect'
@@ -201,5 +202,82 @@ class UserController extends Controller
                 'message' => 'User is not Authenticated.'
             ]);
         }
+    }
+
+    //Forget Password
+    public function forgotPassword(Request $request)
+    {
+        try {
+            $user = User::where('email', $request->email)->first();
+            if($user) {
+                $token = Str::random(40);
+                $domain = URL::to('/');
+                $url = $domain.'/reset-password?token='.$token;
+
+                $data['url'] = $url;
+                $data['email'] = $request->email;
+                $data['title'] = "Password Reset";
+                $data['body'] = "Please click on below link to reset your password.";
+
+                Mail::send('mail.forgetPassword-email', ['data' => $data], function ($message) use ($data) {
+                    $message->to($data['email'])->subject($data['title']);
+                });
+
+                $datetime = Carbon::now()->format('Y-m-d H:i:s');
+                PasswordReset::updateOrCreate([
+                    'email' => $request->email
+                ], [
+                    'email' => $request->email,
+                    'token' => $token,
+                    'created_at' => $datetime
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Please check your mail to Reset your Password'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User Not Found'
+                ]);
+            }
+        } catch(\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    //Reset Password View Load
+    public function resetPasswordLoad(Request $request)
+    {
+        $resetData = PasswordReset::where('token', $request->token)->first();
+        if(!$resetData) {
+            return view('mail-error.404');
+        }
+        if(isset($request->token) && !empty($resetData)) {
+            $user = User::where('email', $resetData['email'])->first();
+            return view('forgetPassword.resetPassword', compact('user'));
+        } else {
+            return view('mail-error.404');
+        }
+    }
+
+    //Password Reset
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|string|min:6|confirmed'
+        ]);
+
+        $user = User::find($request->id);
+        $user->password = $request->password;
+        $user->save();
+
+        PasswordReset::where('email', $user->email)->delete();
+
+        return "<h1>Your Password has been Reset Successfully!!!</h1>";
     }
 }
